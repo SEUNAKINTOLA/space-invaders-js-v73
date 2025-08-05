@@ -1,19 +1,24 @@
 /**
- * @file ScoreManager.ts
- * @description Manages game scoring system, including tracking, updating, and displaying scores
+ * @fileoverview Score Management System
+ * Handles the tracking, updating, and display of game scores
+ * 
  * @module ScoreManager
+ * @author AI Assistant
+ * @version 1.0.0
  */
 
-// ====== Types & Interfaces ======
+// =========================================
+// Type Definitions
+// =========================================
 
 /**
- * Configuration options for the score manager
+ * Configuration options for the ScoreManager
  */
 interface ScoreConfig {
   initialScore: number;
   maxScore?: number;
   minScore?: number;
-  multiplier?: number;
+  scoreMultiplier?: number;
 }
 
 /**
@@ -21,205 +26,156 @@ interface ScoreConfig {
  */
 interface ScoreUpdateEvent {
   previousScore: number;
-  currentScore: number;
-  difference: number;
+  newScore: number;
   timestamp: Date;
 }
 
 /**
- * Score history entry structure
+ * Observer callback type for score updates
  */
-interface ScoreHistoryEntry {
-  score: number;
-  reason?: string;
-  timestamp: Date;
-}
+type ScoreUpdateCallback = (event: ScoreUpdateEvent) => void;
 
-// ====== Constants ======
+// =========================================
+// Constants
+// =========================================
 
 const DEFAULT_CONFIG: ScoreConfig = {
   initialScore: 0,
   maxScore: Number.MAX_SAFE_INTEGER,
   minScore: 0,
-  multiplier: 1,
+  scoreMultiplier: 1
 };
 
-// ====== Class Implementation ======
+// =========================================
+// Main Class Implementation
+// =========================================
 
 /**
- * Manages game scoring system with features like score tracking,
- * history, multipliers, and event handling
+ * Manages game scoring system with support for tracking, updating,
+ * and notifying observers of score changes
  */
 export class ScoreManager {
   private currentScore: number;
-  private readonly config: ScoreConfig;
-  private scoreHistory: ScoreHistoryEntry[];
-  private scoreUpdateCallbacks: ((event: ScoreUpdateEvent) => void)[];
+  private config: ScoreConfig;
+  private observers: Set<ScoreUpdateCallback>;
+  private static instance: ScoreManager;
 
   /**
-   * Creates a new ScoreManager instance
-   * @param config - Configuration options for the score manager
+   * Private constructor to enforce singleton pattern
+   * @param config - Configuration options for score management
    */
-  constructor(config: Partial<ScoreConfig> = {}) {
+  private constructor(config: Partial<ScoreConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
     this.currentScore = this.config.initialScore;
-    this.scoreHistory = [];
-    this.scoreUpdateCallbacks = [];
-    
-    this.validateConfig();
+    this.observers = new Set();
   }
 
   /**
-   * Validates the configuration settings
-   * @throws Error if configuration is invalid
+   * Gets the singleton instance of ScoreManager
+   * @param config - Optional configuration for initial setup
+   * @returns ScoreManager instance
    */
-  private validateConfig(): void {
-    if (this.config.maxScore! < this.config.minScore!) {
-      throw new Error('Maximum score cannot be less than minimum score');
+  public static getInstance(config?: Partial<ScoreConfig>): ScoreManager {
+    if (!ScoreManager.instance) {
+      ScoreManager.instance = new ScoreManager(config);
     }
-    if (this.config.multiplier! <= 0) {
-      throw new Error('Multiplier must be greater than 0');
-    }
+    return ScoreManager.instance;
   }
 
   /**
    * Gets the current score
    * @returns Current score value
    */
-  public getCurrentScore(): number {
+  public getScore(): number {
     return this.currentScore;
   }
 
   /**
-   * Adds points to the current score
-   * @param points - Number of points to add
-   * @param reason - Optional reason for the score change
-   * @returns Updated score value
-   * @throws Error if resulting score would exceed limits
+   * Updates the score by a given amount
+   * @param points - Points to add (or subtract if negative)
+   * @throws Error if resulting score would be outside min/max bounds
    */
-  public addPoints(points: number, reason?: string): number {
-    const adjustedPoints = points * this.config.multiplier!;
-    const newScore = this.currentScore + adjustedPoints;
+  public updateScore(points: number): void {
+    try {
+      const previousScore = this.currentScore;
+      const adjustedPoints = points * (this.config.scoreMultiplier ?? 1);
+      const newScore = this.currentScore + adjustedPoints;
 
-    if (newScore > this.config.maxScore!) {
-      throw new Error(`Score cannot exceed maximum value of ${this.config.maxScore}`);
+      // Validate new score against bounds
+      if (newScore > (this.config.maxScore ?? Number.MAX_SAFE_INTEGER)) {
+        throw new Error('Score would exceed maximum limit');
+      }
+      if (newScore < (this.config.minScore ?? 0)) {
+        throw new Error('Score would fall below minimum limit');
+      }
+
+      this.currentScore = newScore;
+
+      // Notify observers
+      this.notifyObservers({
+        previousScore,
+        newScore,
+        timestamp: new Date()
+      });
+    } catch (error) {
+      console.error('Error updating score:', error);
+      throw error;
     }
-
-    const previousScore = this.currentScore;
-    this.currentScore = newScore;
-
-    this.recordHistory(newScore, reason);
-    this.notifyScoreUpdate(previousScore, newScore, adjustedPoints);
-
-    return this.currentScore;
   }
 
   /**
-   * Subtracts points from the current score
-   * @param points - Number of points to subtract
-   * @param reason - Optional reason for the score change
-   * @returns Updated score value
-   * @throws Error if resulting score would go below minimum
-   */
-  public subtractPoints(points: number, reason?: string): number {
-    const adjustedPoints = points * this.config.multiplier!;
-    const newScore = this.currentScore - adjustedPoints;
-
-    if (newScore < this.config.minScore!) {
-      throw new Error(`Score cannot go below minimum value of ${this.config.minScore}`);
-    }
-
-    const previousScore = this.currentScore;
-    this.currentScore = newScore;
-
-    this.recordHistory(newScore, reason);
-    this.notifyScoreUpdate(previousScore, newScore, -adjustedPoints);
-
-    return this.currentScore;
-  }
-
-  /**
-   * Resets the score to initial value
+   * Resets score to initial value
    */
   public resetScore(): void {
     const previousScore = this.currentScore;
     this.currentScore = this.config.initialScore;
     
-    this.recordHistory(this.currentScore, 'Score reset');
-    this.notifyScoreUpdate(
+    this.notifyObservers({
       previousScore,
-      this.currentScore,
-      this.currentScore - previousScore
-    );
-  }
-
-  /**
-   * Records a score change in history
-   * @param score - New score value
-   * @param reason - Optional reason for the change
-   */
-  private recordHistory(score: number, reason?: string): void {
-    this.scoreHistory.push({
-      score,
-      reason,
-      timestamp: new Date(),
+      newScore: this.currentScore,
+      timestamp: new Date()
     });
   }
 
   /**
-   * Gets the score history
-   * @returns Array of score history entries
-   */
-  public getScoreHistory(): ReadonlyArray<ScoreHistoryEntry> {
-    return [...this.scoreHistory];
-  }
-
-  /**
-   * Registers a callback for score updates
+   * Subscribes to score updates
    * @param callback - Function to call when score changes
    */
-  public onScoreUpdate(callback: (event: ScoreUpdateEvent) => void): void {
-    this.scoreUpdateCallbacks.push(callback);
+  public subscribe(callback: ScoreUpdateCallback): void {
+    this.observers.add(callback);
   }
 
   /**
-   * Notifies all registered callbacks of a score update
-   * @param previousScore - Score before the update
-   * @param currentScore - Score after the update
-   * @param difference - Point difference
+   * Unsubscribes from score updates
+   * @param callback - Function to remove from observers
    */
-  private notifyScoreUpdate(
-    previousScore: number,
-    currentScore: number,
-    difference: number
-  ): void {
-    const event: ScoreUpdateEvent = {
-      previousScore,
-      currentScore,
-      difference,
-      timestamp: new Date(),
-    };
+  public unsubscribe(callback: ScoreUpdateCallback): void {
+    this.observers.delete(callback);
+  }
 
-    this.scoreUpdateCallbacks.forEach(callback => {
+  /**
+   * Updates configuration settings
+   * @param newConfig - Partial configuration to update
+   */
+  public updateConfig(newConfig: Partial<ScoreConfig>): void {
+    this.config = { ...this.config, ...newConfig };
+  }
+
+  /**
+   * Notifies all observers of score changes
+   * @param event - Score update event data
+   * @private
+   */
+  private notifyObservers(event: ScoreUpdateEvent): void {
+    this.observers.forEach(observer => {
       try {
-        callback(event);
+        observer(event);
       } catch (error) {
-        console.error('Error in score update callback:', error);
+        console.error('Error in score update observer:', error);
       }
     });
   }
-
-  /**
-   * Updates the score multiplier
-   * @param multiplier - New multiplier value
-   * @throws Error if multiplier is invalid
-   */
-  public setMultiplier(multiplier: number): void {
-    if (multiplier <= 0) {
-      throw new Error('Multiplier must be greater than 0');
-    }
-    this.config.multiplier = multiplier;
-  }
 }
 
-export default ScoreManager;
+// Export default instance
+export default ScoreManager.getInstance();

@@ -1,74 +1,69 @@
 /**
- * @fileoverview Score Display Component
- * Manages and renders the scoring system UI component.
- * Handles score updates, animations, and display formatting.
- * 
+ * @file ScoreDisplay.ts
+ * @description A reusable score display component that handles score visualization and updates
  * @module ScoreDisplay
  */
 
-// ======= Imports =======
 import { Observable, Subject } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
 
-// ======= Types =======
-interface ScoreConfig {
-  initialValue: number;
-  minValue: number;
-  maxValue: number;
-  animationDuration: number;
+/**
+ * Configuration options for the ScoreDisplay component
+ */
+interface ScoreDisplayConfig {
+  initialScore?: number;
+  animationDuration?: number;
+  formatScore?: (score: number) => string;
 }
 
-interface ScoreUpdateEvent {
-  value: number;
-  reason?: string;
-}
-
-// ======= Constants =======
-const DEFAULT_CONFIG: ScoreConfig = {
-  initialValue: 0,
-  minValue: 0,
-  maxValue: 999999,
+/**
+ * Default configuration values
+ */
+const DEFAULT_CONFIG: Required<ScoreDisplayConfig> = {
+  initialScore: 0,
   animationDuration: 500,
+  formatScore: (score: number) => score.toLocaleString(),
 };
 
 /**
- * ScoreDisplay class handles the rendering and management of a score display component.
- * Supports animated transitions, formatting, and reactive updates.
+ * ScoreDisplay class handles the visualization and management of game scores
  */
 export class ScoreDisplay {
   private currentScore: number;
+  private targetScore: number;
   private element: HTMLElement | null;
-  private config: ScoreConfig;
+  private config: Required<ScoreDisplayConfig>;
   private destroy$ = new Subject<void>();
-  private scoreUpdate$ = new Subject<ScoreUpdateEvent>();
+  private scoreUpdate$ = new Subject<number>();
 
   /**
    * Creates a new ScoreDisplay instance
-   * @param elementId - DOM element ID where the score will be displayed
-   * @param config - Optional configuration for the score display
+   * @param elementId - The ID of the HTML element to attach the score display to
+   * @param config - Configuration options for the score display
    */
   constructor(
     private readonly elementId: string,
-    config: Partial<ScoreConfig> = {}
+    config: ScoreDisplayConfig = {}
   ) {
     this.config = { ...DEFAULT_CONFIG, ...config };
-    this.currentScore = this.config.initialValue;
+    this.currentScore = this.config.initialScore;
+    this.targetScore = this.config.initialScore;
     this.element = null;
     this.initialize();
   }
 
   /**
    * Initializes the score display component
-   * @throws {Error} If the specified element ID is not found
+   * @throws {Error} If the specified element ID is not found in the DOM
    */
   private initialize(): void {
     try {
       this.element = document.getElementById(this.elementId);
       if (!this.element) {
-        throw new Error(`Element with ID '${this.elementId}' not found`);
+        throw new Error(`Element with ID "${this.elementId}" not found`);
       }
 
-      this.setupSubscriptions();
+      this.setupScoreUpdates();
       this.render();
     } catch (error) {
       console.error('Failed to initialize ScoreDisplay:', error);
@@ -77,60 +72,37 @@ export class ScoreDisplay {
   }
 
   /**
-   * Sets up reactive subscriptions for score updates
+   * Sets up the score update subscription
    */
-  private setupSubscriptions(): void {
+  private setupScoreUpdates(): void {
     this.scoreUpdate$
       .pipe(takeUntil(this.destroy$))
-      .subscribe(event => {
-        this.handleScoreUpdate(event);
+      .subscribe((newScore) => {
+        this.animateScoreChange(newScore);
       });
   }
 
   /**
-   * Updates the score with optional animation
-   * @param value - New score value
-   * @param reason - Optional reason for the score update
+   * Updates the score with animation
+   * @param newScore - The new score value to animate to
    */
-  public updateScore(value: number, reason?: string): void {
-    if (!this.isValidScore(value)) {
-      console.warn(`Invalid score value: ${value}`);
-      return;
-    }
+  private animateScoreChange(newScore: number): void {
+    if (!this.element) return;
 
-    this.scoreUpdate$.next({ value, reason });
-  }
-
-  /**
-   * Handles score update events and triggers animation
-   * @param event - Score update event
-   */
-  private handleScoreUpdate(event: ScoreUpdateEvent): void {
-    const oldScore = this.currentScore;
-    this.currentScore = this.clampScore(event.value);
-
-    if (this.config.animationDuration > 0) {
-      this.animateScore(oldScore, this.currentScore);
-    } else {
-      this.render();
-    }
-  }
-
-  /**
-   * Animates the score transition
-   * @param from - Starting score
-   * @param to - Ending score
-   */
-  private animateScore(from: number, to: number): void {
+    this.targetScore = newScore;
+    const startScore = this.currentScore;
+    const scoreChange = this.targetScore - startScore;
     const startTime = performance.now();
-    const difference = to - from;
 
     const animate = (currentTime: number) => {
       const elapsed = currentTime - startTime;
       const progress = Math.min(elapsed / this.config.animationDuration, 1);
 
-      const currentValue = from + difference * this.easeOutQuad(progress);
-      this.render(Math.round(currentValue));
+      // Use easeOutQuad easing function for smooth animation
+      const easeProgress = 1 - Math.pow(1 - progress, 2);
+      this.currentScore = startScore + scoreChange * easeProgress;
+
+      this.render();
 
       if (progress < 1) {
         requestAnimationFrame(animate);
@@ -141,60 +113,45 @@ export class ScoreDisplay {
   }
 
   /**
-   * Easing function for smooth animations
-   * @param t - Progress value between 0 and 1
-   */
-  private easeOutQuad(t: number): number {
-    return t * (2 - t);
-  }
-
-  /**
    * Renders the current score to the DOM
-   * @param value - Optional value to render (defaults to currentScore)
    */
-  private render(value?: number): void {
+  private render(): void {
     if (!this.element) return;
 
-    const scoreToRender = value ?? this.currentScore;
-    this.element.textContent = this.formatScore(scoreToRender);
+    const formattedScore = this.config.formatScore(Math.round(this.currentScore));
+    this.element.textContent = formattedScore;
   }
 
   /**
-   * Formats the score for display
-   * @param score - Score value to format
+   * Updates the score value
+   * @param newScore - The new score value
    */
-  private formatScore(score: number): string {
-    return score.toLocaleString();
-  }
+  public updateScore(newScore: number): void {
+    if (typeof newScore !== 'number' || isNaN(newScore)) {
+      console.error('Invalid score value:', newScore);
+      return;
+    }
 
-  /**
-   * Validates if a score value is within acceptable range
-   * @param value - Score value to validate
-   */
-  private isValidScore(value: number): boolean {
-    return !isNaN(value) && isFinite(value);
-  }
-
-  /**
-   * Clamps score value between min and max bounds
-   * @param value - Score value to clamp
-   */
-  private clampScore(value: number): number {
-    return Math.min(
-      Math.max(value, this.config.minValue),
-      this.config.maxValue
-    );
+    this.scoreUpdate$.next(newScore);
   }
 
   /**
    * Gets the current score value
+   * @returns The current score
    */
   public getCurrentScore(): number {
-    return this.currentScore;
+    return Math.round(this.currentScore);
   }
 
   /**
-   * Cleans up resources and subscriptions
+   * Resets the score to the initial value
+   */
+  public reset(): void {
+    this.updateScore(this.config.initialScore);
+  }
+
+  /**
+   * Cleans up resources when the component is destroyed
    */
   public destroy(): void {
     this.destroy$.next();
@@ -202,5 +159,15 @@ export class ScoreDisplay {
   }
 }
 
-// Export types for external use
-export type { ScoreConfig, ScoreUpdateEvent };
+/**
+ * Factory function to create a new ScoreDisplay instance
+ * @param elementId - The ID of the HTML element to attach the score display to
+ * @param config - Configuration options for the score display
+ * @returns A new ScoreDisplay instance
+ */
+export function createScoreDisplay(
+  elementId: string,
+  config?: ScoreDisplayConfig
+): ScoreDisplay {
+  return new ScoreDisplay(elementId, config);
+}

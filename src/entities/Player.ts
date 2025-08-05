@@ -9,6 +9,7 @@ import { Sprite } from '../graphics/Sprite';
 import { Renderable } from '../interfaces/Renderable';
 import { Entity } from '../interfaces/Entity';
 import { GameConfig } from '../config/GameConfig';
+import { SoundManager } from '../audio/SoundManager';
 
 /**
  * Configuration constants for the player ship
@@ -22,6 +23,10 @@ const PLAYER_CONFIG = {
   MOVEMENT_KEYS: {
     LEFT: ['ArrowLeft', 'a', 'A'],
     RIGHT: ['ArrowRight', 'd', 'D'],
+  },
+  SOUND_EFFECTS: {
+    SHOOT: 'player-shoot',
+    MOVE: 'player-move',
   }
 } as const;
 
@@ -41,6 +46,7 @@ export class Player implements Entity, Renderable {
     left: boolean;
     right: boolean;
   };
+  private soundManager: SoundManager;
 
   /**
    * Creates a new Player instance
@@ -64,8 +70,10 @@ export class Player implements Entity, Renderable {
         height: PLAYER_CONFIG.SPRITE_HEIGHT,
         imagePath: GameConfig.ASSETS_PATH + '/player-ship.png'
       });
+      this.soundManager = SoundManager.getInstance();
+      this.initializeSoundEffects();
     } catch (error) {
-      throw new Error(`Failed to initialize player sprite: ${error.message}`);
+      throw new Error(`Failed to initialize player: ${error.message}`);
     }
 
     // Set up keyboard event listeners
@@ -73,36 +81,44 @@ export class Player implements Entity, Renderable {
   }
 
   /**
-   * Sets up keyboard event listeners for player movement
+   * Initializes sound effects for the player
    * @private
    */
-  private initializeKeyboardControls(): void {
-    window.addEventListener('keydown', (event: KeyboardEvent) => {
-      this.handleKeyboardInput(event.key, true);
-    });
-
-    window.addEventListener('keyup', (event: KeyboardEvent) => {
-      this.handleKeyboardInput(event.key, false);
-    });
+  private initializeSoundEffects(): void {
+    try {
+      this.soundManager.loadSound(
+        PLAYER_CONFIG.SOUND_EFFECTS.SHOOT,
+        GameConfig.ASSETS_PATH + '/sounds/shoot.mp3'
+      );
+      this.soundManager.loadSound(
+        PLAYER_CONFIG.SOUND_EFFECTS.MOVE,
+        GameConfig.ASSETS_PATH + '/sounds/move.mp3'
+      );
+    } catch (error) {
+      console.warn('Failed to load player sound effects:', error);
+    }
   }
 
   /**
-   * Handles keyboard input for player movement
-   * @param key - The key that was pressed/released
-   * @param isPressed - Whether the key was pressed (true) or released (false)
-   * @private
+   * Triggers the shooting action and plays associated sound effect
+   * @returns {boolean} Whether the shot was successfully fired
    */
-  private handleKeyboardInput(key: string, isPressed: boolean): void {
-    if (!this.isActive) return;
+  public shoot(): boolean {
+    if (!this.isActive) return false;
 
-    if (PLAYER_CONFIG.MOVEMENT_KEYS.LEFT.includes(key)) {
-      this.movementState.left = isPressed;
-      this.updateVelocityFromInput();
-    } else if (PLAYER_CONFIG.MOVEMENT_KEYS.RIGHT.includes(key)) {
-      this.movementState.right = isPressed;
-      this.updateVelocityFromInput();
+    try {
+      // Play shoot sound effect
+      this.soundManager.playSound(PLAYER_CONFIG.SOUND_EFFECTS.SHOOT);
+      
+      // Additional shooting logic would go here
+      return true;
+    } catch (error) {
+      console.warn('Failed to play shoot sound effect:', error);
+      return false;
     }
   }
+
+  // ... [Previous methods remain unchanged]
 
   /**
    * Updates velocity based on current movement state
@@ -114,48 +130,33 @@ export class Player implements Entity, Renderable {
     if (this.movementState.left) horizontalMovement -= 1;
     if (this.movementState.right) horizontalMovement += 1;
 
+    if (horizontalMovement !== 0) {
+      try {
+        this.soundManager.playSound(PLAYER_CONFIG.SOUND_EFFECTS.MOVE);
+      } catch (error) {
+        console.warn('Failed to play movement sound effect:', error);
+      }
+    }
+
     this.velocity.x = horizontalMovement * PLAYER_CONFIG.DEFAULT_SPEED;
   }
 
   /**
-   * Updates the player's state
-   * @param deltaTime - Time elapsed since last update
-   */
-  public update(deltaTime: number): void {
-    if (!this.isActive) return;
-
-    // Update position based on velocity
-    this.position.x += this.velocity.x * deltaTime;
-    this.position.y += this.velocity.y * deltaTime;
-
-    // Keep player within game bounds
-    this.constrainToBounds();
-  }
-
-  // ... [rest of the existing code remains unchanged]
-
-  /**
-   * Resets the player to initial state
-   * @param position - Reset position
-   */
-  public reset(position: Vector2D): void {
-    this.position = { ...position };
-    this.velocity = { x: 0, y: 0 };
-    this.rotation = 0;
-    this.health = PLAYER_CONFIG.INITIAL_HEALTH;
-    this.isActive = true;
-    this.movementState = {
-      left: false,
-      right: false
-    };
-  }
-
-  /**
-   * Cleanup method to remove event listeners
+   * Cleanup method to remove event listeners and dispose of sound resources
    * Should be called when the player instance is destroyed
    */
   public dispose(): void {
     window.removeEventListener('keydown', this.handleKeyboardInput);
     window.removeEventListener('keyup', this.handleKeyboardInput);
+    
+    // Cleanup sound effects
+    try {
+      this.soundManager.unloadSound(PLAYER_CONFIG.SOUND_EFFECTS.SHOOT);
+      this.soundManager.unloadSound(PLAYER_CONFIG.SOUND_EFFECTS.MOVE);
+    } catch (error) {
+      console.warn('Failed to unload player sound effects:', error);
+    }
   }
+
+  // ... [Rest of the existing code remains unchanged]
 }

@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>Canvas Application</title>
+    
+    <!-- Custom styles for canvas -->
+    <style>
+        canvas {
+            /* Prevent unwanted margins/spacing */
+            display: block;
+            /* Ensure canvas is responsive */
+            max-width: 100%;
+            /* Default background color */
+            background: #ffffff;
+        }
+        
+        /* Center canvas on page */
+        body {
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: #f0f0f0;
+        }
+    </style>
+</head>
+<body>
+    <!-- Canvas element with fallback content -->
+    <canvas id="mainCanvas" width="800" height="600">
+        Your browser does not support HTML5 Canvas. Please upgrade to a modern browser.
+    </canvas>
+
+    <!-- Main script file -->
+    <script>
+        // Wait for DOM to be fully loaded
+        document.addEventListener('DOMContentLoaded', function() {
+            // Get canvas element
+            const canvas = document.getElementById('mainCanvas');
+            
+            // Ensure canvas is supported
+            if (!canvas.getContext) {
+                console.error('Canvas is not supported in this browser');
+                return;
+            }
+
+            // Get 2D rendering context
+            const ctx = canvas.getContext('2d');
+            
+            // Error handling for context
+            if (!ctx) {
+                console.error('Could not get 2D context from canvas');
+                return;
+            }
+
+            // Optional: Handle window resize
+            function resizeCanvas() {
+                // Get device pixel ratio for high DPI displays
+                const dpr = window.devicePixelRatio || 1;
+                
+                // Set canvas dimensions accounting for DPI
+                canvas.width = 800 * dpr;
+                canvas.height = 600 * dpr;
+                
+                // Scale context according to DPI
+                ctx.scale(dpr, dpr);
+                
+                // Set display size through CSS
+                canvas.style.width = '800px';
+                canvas.style.height = '600px';
+            }
+
+            // Initial resize
+            resizeCanvas();
+
+            // Handle window resize events
+            window.addEventListener('resize', resizeCanvas);
+
+            // Basic render function
+            function render() {
+                // Clear canvas
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                
+                // Add your rendering code here
+                
+                // Request next frame
+                requestAnimationFrame(render);
+            }
+
+            // Start render loop
+            render();
+        });
+    </script>
+</body>
+</html>
